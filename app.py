@@ -168,13 +168,21 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
         with st.expander(f"📦 Found {len(st.session_state.processed_sitemaps)} Sitemaps in Index"):
             st.write(st.session_state.processed_sitemaps)
             
-    # 2. Filters
+    # 2. Filters & Actions
     st.subheader("Filters & Actions")
+    
+    # late analysis button (restored)
+    if "final_status" not in df.columns or df['final_status'].isnull().all():
+         col_act1, col_act2 = st.columns([1, 3])
+         with col_act1:
+             if st.button("Analyze URLs Now (SEO)"):
+                 run_late_analysis(df['sitemap_url'].tolist())
+    
     col_f1, col_f2, col_f3 = st.columns(3)
     
     filter_status = "All"
     if "final_status" in df.columns:
-        options = ["All", "200 OK", "Errors (4xx, 5xx)", "Redirects (3xx)"]
+        options = ["All", "200 OK", "Errors (4xx, 5xx)", "Redirects (3xx)", "Noindex", "Non-Canonical"]
         filter_status = col_f1.selectbox("Filter Status", options)
     
     filter_text = col_f2.text_input("Search URL", "")
@@ -186,24 +194,56 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
         df = df[df['final_status'] >= 400]
     elif filter_status == "Redirects (3xx)":
          df = df[df['final_status'].between(300, 399)]
+    elif filter_status == "Noindex":
+         if "noindex" in df.columns:
+             df = df[df['noindex'] == True]
+    elif filter_status == "Non-Canonical":
+         if "canonical_match" in df.columns:
+             df = df[df['canonical_match'] == False]
          
     if filter_text:
         df = df[df['sitemap_url'].str.contains(filter_text, case=False, na=False)]
 
     filtered_count = len(df)
-    st.caption(f"Showing {filtered_count} URLs")
     
-    # 3. Data Table with Icons
+    # 3. Detailed Stats (Above Table)
+    st.markdown("### Statistics")
+    m1, m2, m3, m4, m5 = st.columns(5)
+    
+    m1.metric("Total URLs", len(st.session_state.df_results)) # Use original DF for totals
+    
+    if "final_status" in st.session_state.df_results.columns:
+        orig_df = st.session_state.df_results
+        ok_count = len(orig_df[orig_df['final_status'] == 200])
+        m2.metric("200 OK", ok_count)
+        
+        if "noindex" in orig_df.columns:
+            noindex_cnt = orig_df['noindex'].sum()
+            m3.metric("Noindex", int(noindex_cnt))
+        else:
+            m3.metric("Noindex", "N/A")
+            
+        if "canonical_match" in orig_df.columns:
+            non_canon_cnt = len(orig_df[orig_df['canonical_match'] == False])
+            m4.metric("Non-Canonical", int(non_canon_cnt))
+        else:
+            m4.metric("Non-Canonical", "N/A")
+            
+        err_cnt = len(orig_df[orig_df['final_status'] >= 400])
+        m5.metric("Errors", err_cnt)
+
+
+    st.caption(f"Showing {filtered_count} URLs in current view")
+    
+    # 4. Data Table with Icons
     
     # Prepare Display Columns
-    # Map logic to boolean for icons
     display_df = df.copy()
     
     if "final_status" in display_df.columns:
         display_df['Status Icon'] = display_df['final_status'].apply(lambda x: True if x == 200 else False)
     
     if "canonical_match" in display_df.columns:
-        # Ensure boolean
         display_df['canonical_match'] = display_df['canonical_match'].fillna(False).astype(bool)
 
     # Column Configuration
@@ -218,65 +258,95 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
     # Pagination Logic
     total_pages = max(1, (len(display_df) - 1) // ITEMS_PER_PAGE + 1)
     
-    # Ensure page valid
     if st.session_state.page_number >= total_pages:
         st.session_state.page_number = 0
         
     start_idx = st.session_state.page_number * ITEMS_PER_PAGE
     end_idx = start_idx + ITEMS_PER_PAGE
     
-    # Selection in Dataframe
+    # Selection
     selection = st.dataframe(
         display_df.iloc[start_idx:end_idx], 
         use_container_width=True,
         column_config=column_config,
-        on_select="rerun", # Enable selection
+        on_select="rerun", 
         selection_mode="multi-row" 
     )
     
     selected_indices = selection.selection.rows
-    # These indices are relative to the SLICE (0 to 100). Need to map to DF.
-    # Actually, st.dataframe returns row indices of the original dataframe passed to it if index is preserved?
-    # No, it returns integer usage indices of the displayed data (0-N).
-    # We must start_idx + selected_row_index to get index in display_df.
-    
     selected_urls = []
     if selected_indices:
-        # Map visual index to real DF index
-        # display_df.iloc[...] is a slice. The row ID from on_select refers to the position in that slice.
         slice_df = display_df.iloc[start_idx:end_idx]
         selected_urls = slice_df.iloc[selected_indices]['sitemap_url'].tolist()
         
     if selected_urls:
-        st.error(f"Selected {len(selected_urls)} URLs for Re-Analysis")
-        if st.button("Re-Analyze Selected URLs"):
-            update_analysis(selected_urls)
+         st.info(f"Selected {len(selected_urls)} URLs")
+         if st.button("Re-Analyze Selected URLs"):
+             update_analysis(selected_urls)
 
-    # 4. Pagination Controls (Bottom)
-    c_prev, c_input, c_next = st.columns([1, 2, 1])
+    # 5. Smart Pagination (Bottom)
+    st.divider()
     
-    with c_prev:
-        if st.button("Previous Page", disabled=(st.session_state.page_number == 0)):
-            st.session_state.page_number -= 1
-            st.rerun()
+    # Layout: [Prev] [1] [2] [3] [Input] [N-2] [N-1] [N] [Next]
+    # If pages <= 7, just show them all.
+    
+    # We use columns. We need up to 9 columns for separate buttons + input + nav
+    # But Streamlit columns are equally spaced usually. 
+    # We'll use a container with columns inside.
+    
+    cp1, cp2, cp3, cp4, cp5, cp6, cp7, cp8, cp9 = st.columns([1, 1, 1, 1, 2, 1, 1, 1, 1])
+    
+    current = st.session_state.page_number + 1
+    
+    def set_page(p):
+        st.session_state.page_number = p - 1
+        st.rerun()
+        
+    with cp1:
+        if st.button("◀ Prev", disabled=(current == 1)):
+             set_page(current - 1)
+             
+    if total_pages <= 7:
+        # Show all 1..total_pages
+        # We can reuse the columns we have
+        cols = [cp2, cp3, cp4, cp5, cp6, cp7, cp8]
+        for i in range(1, total_pages + 1):
+            if i <= len(cols):
+                with cols[i-1]:
+                    if st.button(str(i), key=f"p_{i}", type="primary" if i == current else "secondary"):
+                        set_page(i)
+    else:
+        # Show 1, 2, 3 .. Input .. N-2, N-1, N
+        
+        # 1, 2, 3
+        with cp2:
+            if st.button("1", key="p_1", type="primary" if 1 == current else "secondary"): set_page(1)
+        with cp3:
+            if st.button("2", key="p_2", type="primary" if 2 == current else "secondary"): set_page(2)
+        with cp4:
+             if st.button("3", key="p_3", type="primary" if 3 == current else "secondary"): set_page(3)
+             
+        # Input Checkbox
+        with cp5:
+            # We use a selectbox or number input for "go to page"
+            # The prompt asked for "....." kind of look, but functional
+            page_in = st.number_input("Go to", min_value=1, max_value=total_pages, value=current, label_visibility="collapsed")
+            if page_in != current:
+                set_page(page_in)
+                
+        # N-2, N-1, N
+        with cp6:
+             if st.button(str(total_pages-2), key=f"p_{total_pages-2}", type="primary" if total_pages-2 == current else "secondary"): set_page(total_pages-2)
+        with cp7:
+             if st.button(str(total_pages-1), key=f"p_{total_pages-1}", type="primary" if total_pages-1 == current else "secondary"): set_page(total_pages-1)
+        with cp8:
+             if st.button(str(total_pages), key=f"p_{total_pages}", type="primary" if total_pages == current else "secondary"): set_page(total_pages)
+             
+    with cp9:
+        if st.button("Next ▶", disabled=(current == total_pages)):
+            set_page(current + 1)
             
-    with c_input:
-        new_page = st.number_input(
-            "Page Info", 
-            min_value=1, max_value=total_pages, 
-            value=st.session_state.page_number + 1,
-            label_visibility="collapsed"
-        )
-        if new_page - 1 != st.session_state.page_number:
-            st.session_state.page_number = new_page - 1
-            st.rerun()
-            
-    with c_next:
-        if st.button("Next Page", disabled=(st.session_state.page_number >= total_pages - 1)):
-            st.session_state.page_number += 1
-            st.rerun()
-            
-    # 5. Downloads
+    # 6. Downloads
     st.divider()
     d1, d2 = st.columns(2)
     with d1:
@@ -287,3 +357,4 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False, sheet_name='Sheet1')
         st.download_button("Download Excel", buffer.getvalue(), "sitemap_analysis.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
