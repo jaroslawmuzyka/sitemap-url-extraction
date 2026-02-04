@@ -80,7 +80,7 @@ def extract_urls_recursive(url, max_urls=50000):
             if child not in processed_sitemaps:
                 to_process.append(child)
                 
-    return list(all_urls)
+    return list(all_urls), list(processed_sitemaps)
 
 def parse_uploaded_file(file_content):
     """Parse a single uploaded file (bytes)."""
