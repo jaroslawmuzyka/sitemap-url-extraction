@@ -298,55 +298,48 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
         st.rerun()
 
     # Layout Configuration
-    # We use a large spacer to push everything right.
-    # We use gap="small" to keep buttons closer.
+    # Use a standard 12-column grid approach to ensure buttons have enough space.
+    # Each button gets 1 unit. Input gets 2 units. Spacer gets the rest.
     
     if total_pages <= 7:
-        # Simple list: Prev 1 2 3 ... Next
-        count = 1 + total_pages + 1
-        # Give buttons more width (ratio 2) compared to spacer (ratio 10-20)
-        # Spacer needs to be dominant but not crush buttons.
+        # Prev + Pages + Next
+        num_buttons = 1 + total_pages + 1
+        used_cols = num_buttons # 1 unit each
         
-        # Spacer: 8. Buttons: 2 each.
-        cols_config = [8] + [2] * count
+        spacer = max(1, 12 - used_cols)
+        cols_config = [spacer] + [1] * num_buttons
         
-        # vertical_alignment="bottom" aligns buttons with input box if present, 
-        # or just low in the container.
         cols = st.columns(cols_config, gap="small", vertical_alignment="bottom")
         
         with cols[1]:
-            if st.button("◀", disabled=(current == 1), help="Previous"):
+            if st.button("◀", disabled=(current == 1), help="Previous", use_container_width=True):
                  set_page(current - 1)
                  
         for i in range(1, total_pages + 1):
             with cols[1+i]:
-                if st.button(str(i), key=f"p_{i}", type="primary" if i == current else "secondary"):
+                if st.button(str(i), key=f"p_{i}", type="primary" if i == current else "secondary", use_container_width=True):
                     set_page(i)
                     
         with cols[-1]:
-             if st.button("▶", disabled=(current == total_pages), help="Next"):
+             if st.button("▶", disabled=(current == total_pages), help="Next", use_container_width=True):
                 set_page(current + 1)
                 
     else:
         # Complex: Prev 1 2 3 ... Input ... N-2 N-1 N Next
-        # Items: 9 controls.
-        # Ratios: Buttons=2, Input=3, Spacer=remaining.
-        # 1+1+1+1+1+1+1+1 = 8 buttons * 2 = 16 units.
-        # Input = 4 units.
-        # Total controls = 20 units.
-        # Spacer = 20 units (50% width).
+        # Units: 1 + 1+1+1 + 2 (Input) + 1+1+1 + 1 = 10 units
+        # Spacer = 12 - 10 = 2 units.
         
-        cols = st.columns([20, 2, 2, 2, 2, 4, 2, 2, 2, 2], gap="small", vertical_alignment="bottom")
+        cols = st.columns([2, 1, 1, 1, 1, 2, 1, 1, 1, 1], gap="small", vertical_alignment="bottom")
         
         with cols[1]:
-             if st.button("◀", disabled=(current == 1)): set_page(current - 1)
+             if st.button("◀", disabled=(current == 1), use_container_width=True): set_page(current - 1)
         
         with cols[2]: 
-            if st.button("1", key="p_1", type="primary" if 1 == current else "secondary"): set_page(1)
+            if st.button("1", key="p_1", type="primary" if 1 == current else "secondary", use_container_width=True): set_page(1)
         with cols[3]: 
-            if st.button("2", key="p_2", type="primary" if 2 == current else "secondary"): set_page(2)
+            if st.button("2", key="p_2", type="primary" if 2 == current else "secondary", use_container_width=True): set_page(2)
         with cols[4]: 
-            if st.button("3", key="p_3", type="primary" if 3 == current else "secondary"): set_page(3)
+            if st.button("3", key="p_3", type="primary" if 3 == current else "secondary", use_container_width=True): set_page(3)
             
         with cols[5]:
              page_in = st.number_input("Go to", min_value=1, max_value=total_pages, value=current, label_visibility="collapsed")
@@ -354,14 +347,14 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
                 set_page(page_in)
         
         with cols[6]: 
-            if st.button(str(total_pages-2), key=f"p_{total_pages-2}", type="primary" if total_pages-2 == current else "secondary"): set_page(total_pages-2)
+            if st.button(str(total_pages-2), key=f"p_{total_pages-2}", type="primary" if total_pages-2 == current else "secondary", use_container_width=True): set_page(total_pages-2)
         with cols[7]: 
-            if st.button(str(total_pages-1), key=f"p_{total_pages-1}", type="primary" if total_pages-1 == current else "secondary"): set_page(total_pages-1)
+            if st.button(str(total_pages-1), key=f"p_{total_pages-1}", type="primary" if total_pages-1 == current else "secondary", use_container_width=True): set_page(total_pages-1)
         with cols[8]: 
-            if st.button(str(total_pages), key=f"p_{total_pages}", type="primary" if total_pages == current else "secondary"): set_page(total_pages)
+            if st.button(str(total_pages), key=f"p_{total_pages}", type="primary" if total_pages == current else "secondary", use_container_width=True): set_page(total_pages)
             
         with cols[9]:
-             if st.button("▶", disabled=(current == total_pages)): set_page(current + 1)
+             if st.button("▶", disabled=(current == total_pages), use_container_width=True): set_page(current + 1)
             
     # 6. Downloads (Left Aligned)
     st.divider()
