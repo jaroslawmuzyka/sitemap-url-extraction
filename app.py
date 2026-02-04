@@ -291,32 +291,28 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
     # 5. Smart Pagination (Bottom, Right-Aligned)
     st.divider()
     
-    # We want alignment to the RIGHT.
-    # We allocate a large empty column first, then the controls.
-    # Structure: [Spacer (6)] [Prev (1)] [Btns...] [Next (1)]
-    
     current = st.session_state.page_number + 1
     
     def set_page(p):
         st.session_state.page_number = p - 1
         st.rerun()
 
-    # Determine elements to show
-    # We will build a list of elements to render, then put them in right-aligned columns
+    # Layout Configuration
+    # We use a large spacer to push everything right.
+    # We use gap="small" to keep buttons closer.
     
     if total_pages <= 7:
         # Simple list: Prev 1 2 3 ... Next
-        # Num elements = 1 (prev) + total_pages + 1 (next)
-        num_cols = 1 + total_pages + 1
+        count = 1 + total_pages + 1
+        # [Spacer, B, B, B...]
+        # Ratios: Spacer takes remaining space. Buttons take small width.
+        # Streamlit columns checks standard width. 
+        # We try to give buttons a small fixed ratio if possible, or relative.
+        # [10, 1, 1, 1...]
         
-        # Calculate spacer
-        # We assume 12 grid units usually nearby, but st.columns takes ratios/widths.
-        # Let's try [4, 1, 1, ... 1]
+        cols_config = [12] + [1] * count
+        cols = st.columns(cols_config, gap="small")
         
-        cols_config = [6] + [1] * num_cols
-        cols = st.columns(cols_config)
-        
-        # cols[0] is spacer
         with cols[1]:
             if st.button("◀", disabled=(current == 1), help="Previous"):
                  set_page(current - 1)
@@ -332,12 +328,11 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
                 
     else:
         # Complex: Prev 1 2 3 ... Input ... N-2 N-1 N Next
-        # Elements: Prev (1), 1 (1), 2 (1), 3 (1), Input (2), N-2 (1), N-1 (1), N (1), Next (1)
-        # Total widths: 1+1+1+1+2+1+1+1+1 = 10 units?
-        # Spacer needs to be large.
+        # Items: Prev(1), 1(1), 2(1), 3(1), Input(3), N-2(1), N-1(1), N(1), Next(1)
+        # Total "units" for controls = 1+1+1+1+3+1+1+1+1 = 11 units
+        # Spacer = 15 units
         
-        cols = st.columns([5, 1, 1, 1, 1, 2, 1, 1, 1, 1])
-        # cols[0] is spacer
+        cols = st.columns([15, 1, 1, 1, 1, 3, 1, 1, 1, 1], gap="small")
         
         with cols[1]:
              if st.button("◀", disabled=(current == 1)): set_page(current - 1)
@@ -364,9 +359,11 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
         with cols[9]:
              if st.button("▶", disabled=(current == total_pages)): set_page(current + 1)
             
-    # 6. Downloads
+    # 6. Downloads (Left Aligned)
     st.divider()
-    d1, d2 = st.columns(2)
+    # Use small columns for buttons, remainder spacer
+    d1, d2, d_space = st.columns([1, 1, 6])
+    
     with d1:
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, "sitemap_analysis.csv", "text/csv")
