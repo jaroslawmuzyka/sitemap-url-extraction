@@ -304,14 +304,15 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
     if total_pages <= 7:
         # Simple list: Prev 1 2 3 ... Next
         count = 1 + total_pages + 1
-        # [Spacer, B, B, B...]
-        # Ratios: Spacer takes remaining space. Buttons take small width.
-        # Streamlit columns checks standard width. 
-        # We try to give buttons a small fixed ratio if possible, or relative.
-        # [10, 1, 1, 1...]
+        # Give buttons more width (ratio 2) compared to spacer (ratio 10-20)
+        # Spacer needs to be dominant but not crush buttons.
         
-        cols_config = [12] + [1] * count
-        cols = st.columns(cols_config, gap="small")
+        # Spacer: 8. Buttons: 2 each.
+        cols_config = [8] + [2] * count
+        
+        # vertical_alignment="bottom" aligns buttons with input box if present, 
+        # or just low in the container.
+        cols = st.columns(cols_config, gap="small", vertical_alignment="bottom")
         
         with cols[1]:
             if st.button("◀", disabled=(current == 1), help="Previous"):
@@ -328,11 +329,14 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
                 
     else:
         # Complex: Prev 1 2 3 ... Input ... N-2 N-1 N Next
-        # Items: Prev(1), 1(1), 2(1), 3(1), Input(3), N-2(1), N-1(1), N(1), Next(1)
-        # Total "units" for controls = 1+1+1+1+3+1+1+1+1 = 11 units
-        # Spacer = 15 units
+        # Items: 9 controls.
+        # Ratios: Buttons=2, Input=3, Spacer=remaining.
+        # 1+1+1+1+1+1+1+1 = 8 buttons * 2 = 16 units.
+        # Input = 4 units.
+        # Total controls = 20 units.
+        # Spacer = 20 units (50% width).
         
-        cols = st.columns([15, 1, 1, 1, 1, 3, 1, 1, 1, 1], gap="small")
+        cols = st.columns([20, 2, 2, 2, 2, 4, 2, 2, 2, 2], gap="small", vertical_alignment="bottom")
         
         with cols[1]:
              if st.button("◀", disabled=(current == 1)): set_page(current - 1)
