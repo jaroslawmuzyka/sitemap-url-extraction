@@ -28,36 +28,50 @@ async def fetch_url(session, url):
     
     try:
         # stream=True to allow partial reading
-        response = await session.get(url, allow_redirects=False, stream=True, timeout=5)
+        response = await session.get(url, allow_redirects=False, stream=True, timeout=10)
         
         result['final_status'] = response.status_code
         
         # 1. Check Redirects
         if response.status_code in (301, 302, 303, 307, 308):
             result['redirect_location'] = response.headers.get('Location')
-            # Per spec: Stop here for redirects
-            # Ensure we close/consume if needed, though simple return is usually fine
             return result
-            
-        # 2. Check X-Robots-Tag Header
+        
+        # 2. Check Content-Type for Binary Files
+        content_type = response.headers.get('Content-Type', '').lower()
+        if any(x in content_type for x in ['image', 'pdf', 'video', 'audio', 'zip', 'octet-stream']):
+            # It's a binary file, just valid status is enough. 
+            # We assume noindex/canonical rules don't apply same way or can't be parsed from body.
+            # Check headers for basics.
+            x_robots = response.headers.get('X-Robots-Tag', '').lower()
+            if 'noindex' in x_robots or 'none' in x_robots:
+                result['noindex'] = True
+                result['noindex_source'] = 'Header'
+            return result
+
+        # 3. Check X-Robots-Tag Header
         x_robots = response.headers.get('X-Robots-Tag', '').lower()
         if 'noindex' in x_robots or 'none' in x_robots:
             result['noindex'] = True
             result['noindex_source'] = 'Header'
             
-        # 3. Read Body (Partial)
-        # curl_cffi allows iterating content
+        # 4. Read Body (Partial)
         content_accumulated = b""
         async for chunk in response.aiter_content():
             content_accumulated += chunk
             if len(content_accumulated) > MAX_BODY_SIZE:
                 break
         
-        text = content_accumulated.decode('utf-8', errors='ignore')
-        
+        # Try to decode
+        try:
+            text = content_accumulated.decode('utf-8', errors='ignore')
+        except:
+             # If decoding fails completely, treat as binary/error and return
+             return result
+
         soup = BeautifulSoup(text, 'html.parser')
         
-        # 4. Check Meta Robots
+        # 5. Check Meta Robots
         meta_robots = soup.find('meta', attrs={'name': 'robots'})
         if meta_robots:
             content_attr = meta_robots.get('content', '').lower()
@@ -68,21 +82,19 @@ async def fetch_url(session, url):
                     src = 'Both'
                 result['noindex_source'] = src
         
-        # 5. Check Canonical
-        # Try <link rel="canonical">
+        # 6. Check Canonical
         canonical_tag = soup.find('link', attrs={'rel': 'canonical'})
         if canonical_tag:
              result['canonical'] = canonical_tag.get('href')
         
-        # Fallback to Link header if not in HTML (rare but valid)
         if not result['canonical']:
             link_header = response.headers.get('Link')
             # Parse complex Link header if needed, for MVP simple check
             pass 
 
-        # 6. Verify Match
+        # 7. Verify Match (STRICT)
         if result['canonical']:
-            # Strict string comparison
+            # STRICT string comparison - User requirement
             result['canonical_match'] = (result['canonical'] == url)
                 
     except asyncio.TimeoutError:

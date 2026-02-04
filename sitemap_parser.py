@@ -22,10 +22,9 @@ def fetch_sitemap_content(url):
             except OSError:
                 # Fallback if it looked like gzip but wasn't
                 pass
-        return content
+        return content, None  # content, error_msg
     except Exception as e:
-        print(f"Error fetching {url}: {e}")
-        return None
+        return None, f"Error fetching {url}: {e}"
 
 def parse_sitemap(content):
     """Parse sitemap content and return lists of URLs and child sitemaps."""
@@ -55,6 +54,8 @@ def extract_urls_recursive(url, max_urls=50000):
     to_process = [url]
     processed_sitemaps = set()
     
+    errors = []
+    
     while to_process and len(all_urls) < max_urls:
         current_sitemap = to_process.pop(0)
         if current_sitemap in processed_sitemaps:
@@ -63,8 +64,9 @@ def extract_urls_recursive(url, max_urls=50000):
         print(f"Processing: {current_sitemap}")
         processed_sitemaps.add(current_sitemap)
         
-        content = fetch_sitemap_content(current_sitemap)
-        if not content:
+        content, error_msg = fetch_sitemap_content(current_sitemap)
+        if error_msg:
+            errors.append(error_msg)
             continue
             
         urls, child_sitemaps = parse_sitemap(content)
@@ -80,7 +82,7 @@ def extract_urls_recursive(url, max_urls=50000):
             if child not in processed_sitemaps:
                 to_process.append(child)
                 
-    return list(all_urls), list(processed_sitemaps)
+    return list(all_urls), list(processed_sitemaps), errors
 
 def parse_uploaded_file(file_content):
     """Parse a single uploaded file (bytes)."""

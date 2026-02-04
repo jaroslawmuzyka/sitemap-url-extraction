@@ -72,6 +72,7 @@ def run_processing(url_source, is_upload=False):
     
     urls = []
     found_sitemaps = []
+    errors = []
     
     with st.spinner("Extracting URLs..."):
         if is_upload:
@@ -84,10 +85,15 @@ def run_processing(url_source, is_upload=False):
             found_sitemaps = [f.name for f in url_source]
         else:
             # fetch content to validate
-            urls, found_sitemaps = extract_urls_recursive(url_source, max_urls=limit_urls)
+            urls, found_sitemaps, errors = extract_urls_recursive(url_source, max_urls=limit_urls)
     
     urls = urls[:limit_urls]
     
+    if errors:
+        with st.expander("⚠️ Extraction Warnings/Errors", expanded=True):
+            for e in errors:
+                st.error(e)
+
     if not urls:
         st.warning("No URLs found.")
         return
