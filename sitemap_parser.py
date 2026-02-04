@@ -1,23 +1,18 @@
-import requests
 import gzip
 import io
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
+from curl_cffi import requests
 
 def is_gzip(content):
     """Check if content is gzipped based on magic numbers."""
     return content[:2] == b'\x1f\x8b'
 
 def fetch_sitemap_content(url):
-    """Fetch sitemap content, handling GZIP automatically."""
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br'
-    }
+    """Fetch sitemap content using curl_cffi to impersonate Chrome."""
     try:
-        response = requests.get(url, headers=headers, timeout=10)
+        # impersonate="chrome" sends TLS fingerprints matching real Chrome
+        response = requests.get(url, impersonate="chrome", timeout=10)
         response.raise_for_status()
         
         content = response.content
@@ -42,10 +37,6 @@ def parse_sitemap(content):
     # Extract URLs
     urls = [loc.text.strip() for loc in soup.find_all('loc')]
     
-    # Identify if it's a sitemap index by checking for <sitemap> tags
-    # Sitemaps in an index are also in <loc> tags, but under <sitemap> parent
-    # Standard sitemaps have <loc> under <url> parent
-    
     sitemap_index_urls = []
     final_urls = []
     
@@ -56,9 +47,6 @@ def parse_sitemap(content):
         elif parent.name == 'url':
             final_urls.append(tag.text.strip())
             
-    # If soup.find_all('sitemap') found nothing, but we have URLs, it's a regular sitemap
-    # If we found <sitemap> tags, those specific locs are indices
-    
     return final_urls, sitemap_index_urls
 
 def extract_urls_recursive(url, max_urls=50000):

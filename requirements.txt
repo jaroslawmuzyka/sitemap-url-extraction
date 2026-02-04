@@ -2,6 +2,6 @@ streamlit
 pandas
 beautifulsoup4
 lxml
-aiohttp
+curl_cffi
 openpyxl
 xlsxwriter
