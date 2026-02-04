@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import asyncio
+import io
 from sitemap_parser import parse_uploaded_file, parse_sitemap, fetch_sitemap_content, extract_urls_recursive
 from seo_analyzer import analyze_urls
 
@@ -52,6 +53,12 @@ if st.sidebar.button("Clear Results"):
     st.session_state.page_number = 0
     st.rerun()
 
+# Async Analysis Runner
+async def run_seo_analysis_async(urls, status_container):
+    progress_bar = status_container.progress(0)
+    results = await analyze_urls(urls, lambda p: progress_bar.progress(p))
+    return results
+
 # Logic to run processing
 def run_processing(url_source, is_upload=False):
     st.session_state.processing_done = False
@@ -65,15 +72,13 @@ def run_processing(url_source, is_upload=False):
             all_urls = set()
             for f in url_source:
                 # Reset file pointer if needed, but uploaded_file usually OK
+                f.seek(0)
                 file_urls = parse_uploaded_file(f.read())
                 all_urls.update(file_urls)
             urls = list(all_urls)
         else:
             # fetch content to validate
-            content = fetch_sitemap_content(url_source)
-            if not content:
-                st.error("Failed to fetch sitemap.")
-                return
+            # Only validate quickly first
             urls = extract_urls_recursive(url_source, max_urls=limit_urls)
     
     # Trim to limit
@@ -88,17 +93,12 @@ def run_processing(url_source, is_upload=False):
     
     if do_seo:
         st.info(f"Starting SEO Analysis for {len(urls)} URLs... This may take time.")
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        placeholder = st.empty()
         
-        async def run_analysis():
-            results = await analyze_urls(urls, lambda p: progress_bar.progress(p))
-            return results
-            
         try:
-            analyzed_data = asyncio.run(run_analysis())
+            analyzed_data = asyncio.run(run_seo_analysis_async(urls, placeholder))
             df = pd.DataFrame(analyzed_data)
-            status_text.text("Analysis Complete!")
+            placeholder.text("Analysis Complete!")
         except Exception as e:
             st.error(f"Error during analysis: {e}")
             
@@ -106,7 +106,22 @@ def run_processing(url_source, is_upload=False):
     st.session_state.processing_done = True
     st.rerun()
 
-# User Inputs
+# Helper for Late Analysis
+def run_late_analysis():
+    df = st.session_state.df_results
+    if df is not None and "sitemap_url" in df.columns:
+        urls = df["sitemap_url"].tolist()
+        st.info(f"Starting SEO Analysis for {len(urls)} URLs...")
+        placeholder = st.empty()
+        try:
+            analyzed_data = asyncio.run(run_seo_analysis_async(urls, placeholder))
+            st.session_state.df_results = pd.DataFrame(analyzed_data)
+            placeholder.text("Analysis Complete!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error during analysis: {e}")
+
+# User Inputs UI
 if mode == "Upload XML File":
     uploaded_files = st.file_uploader("Upload XML Sitemap(s)", accept_multiple_files=True, type=['xml', 'gz'])
     if st.button("Start Processing"):
@@ -135,7 +150,6 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
     
     if "final_status" in df.columns:
         # Determine status counts
-        # Handle NaN/None carefully
         statuses = df['final_status'].fillna(0).astype(int)
         
         ok_count = (statuses == 200).sum()
@@ -160,7 +174,12 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
             # canonical_match might be boolean or NaN if not checked
             non_canonical_count = len(df[df['canonical_match'] == False])
             s2.metric("Non-Canonical", int(non_canonical_count))
-            
+    else:
+        # If SEO not run, show button to run it
+        st.warning("SEO Analysis not performed yet.")
+        if st.button("Analyze URLs Now"):
+            run_late_analysis()
+
     # 2. Results Table with Pagination
     st.subheader("Results")
     
@@ -187,17 +206,30 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
     start_idx = st.session_state.page_number * ITEMS_PER_PAGE
     end_idx = start_idx + ITEMS_PER_PAGE
     
-    # Style the dataframe?
     st.dataframe(df.iloc[start_idx:end_idx], use_container_width=True)
     
-    # 3. Download
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="Download Full CSV Results",
-        data=csv,
-        file_name="sitemap_analysis.csv",
-        mime="text/csv"
-    )
+    # 3. Downloads (CSV & Excel)
+    d1, d2 = st.columns(2)
+    with d1:
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Download CSV",
+            data=csv,
+            file_name="sitemap_analysis.csv",
+            mime="text/csv"
+        )
+    with d2:
+        # Excel Export
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Sheet1')
+        
+        st.download_button(
+            label="Download Excel (XLSX)",
+            data=buffer.getvalue(),
+            file_name="sitemap_analysis.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
 # Sidebar Example
 st.sidebar.markdown("---")
