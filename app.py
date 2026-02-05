@@ -3,6 +3,9 @@ import streamlit as st
 import pandas as pd
 import asyncio
 import io
+import sitemap_parser
+import importlib
+importlib.reload(sitemap_parser) # Force reload on every run to fix caching issues
 from sitemap_parser import parse_uploaded_file, parse_sitemap, fetch_sitemap_content, extract_urls_recursive
 from seo_analyzer import analyze_urls
 from curl_cffi.requests import RequestsError # For error handling context
