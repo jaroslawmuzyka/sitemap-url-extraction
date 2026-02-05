@@ -48,21 +48,29 @@ def parse_sitemap(content):
             
     return final_urls, sitemap_index_urls
 
-def extract_urls_recursive(url, max_urls=1000000):
+def extract_urls_recursive(url, max_urls=1000000, should_stop=None):
     """Recursively extract URLs from a sitemap or sitemap index."""
-    all_urls = set()
+    all_urls = [] # List of dicts {'sitemap_url': url, 'source_sitemap': source}
+    seen_urls = set()
+    
     to_process = [url]
-    processed_sitemaps = set()
+    processed_sitemaps = [] # List for order
+    processed_sitemaps_set = set() # Set for check
     
     errors = []
     
     while to_process and len(all_urls) < max_urls:
+        if should_stop and should_stop():
+            break
+            
         current_sitemap = to_process.pop(0)
-        if current_sitemap in processed_sitemaps:
+        
+        if current_sitemap in processed_sitemaps_set:
             continue
             
         print(f"Processing: {current_sitemap}")
-        processed_sitemaps.add(current_sitemap)
+        processed_sitemaps.append(current_sitemap)
+        processed_sitemaps_set.add(current_sitemap)
         
         content, error_msg = fetch_sitemap_content(current_sitemap)
         if error_msg:
@@ -73,18 +81,20 @@ def extract_urls_recursive(url, max_urls=1000000):
         
         # Add found URLs
         for u in urls:
-            all_urls.add(u)
-            if len(all_urls) >= max_urls:
-                break
+            if u not in seen_urls:
+                seen_urls.add(u)
+                all_urls.append({'sitemap_url': u, 'source_sitemap': current_sitemap})
+                if len(all_urls) >= max_urls:
+                    break
         
-        # Add child sitemaps to queue
+        # Add child sitemaps to queue (ordered)
         for child in child_sitemaps:
-            if child not in processed_sitemaps:
+            if child not in processed_sitemaps_set:
                 to_process.append(child)
                 
-    return list(all_urls), list(processed_sitemaps), errors
+    return all_urls, processed_sitemaps, errors
 
-def parse_uploaded_file(file_content):
+def parse_uploaded_file(file_content, filename):
     """Parse a single uploaded file (bytes)."""
     urls, _ = parse_sitemap(file_content)
-    return urls
+    return [{'sitemap_url': u, 'source_sitemap': filename} for u in urls]

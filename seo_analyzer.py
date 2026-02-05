@@ -106,7 +106,7 @@ async def fetch_url(session, url):
         
     return result
 
-async def analyze_urls(urls, progress_callback=None):
+async def analyze_urls(urls, progress_callback=None, should_stop=None):
     """
     Analyze a list of URLs concurrently using curl_cffi AsyncSession.
     """
@@ -127,8 +127,18 @@ async def analyze_urls(urls, progress_callback=None):
         completed = 0
         
         for coro in asyncio.as_completed(tasks):
-            res = await coro
-            results.append(res)
+            if should_stop and should_stop():
+                # Cancel remaining tasks
+                for t in tasks:
+                    t.cancel()
+                break
+                
+            try:
+                res = await coro
+                results.append(res)
+            except asyncio.CancelledError:
+                pass
+                
             completed += 1
             if progress_callback:
                 progress_callback(completed / total)

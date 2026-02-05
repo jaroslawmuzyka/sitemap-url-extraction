@@ -58,10 +58,12 @@ if st.sidebar.button("Clear Results"):
     st.rerun()
 
 # Async Analysis Runner
-async def run_seo_analysis_async(urls, status_container):
-    progress_bar = status_container.progress(0)
-    results = await analyze_urls(urls, lambda p: progress_bar.progress(p))
-    return results
+
+
+# Processing Logic
+# Helper for stop logic
+def stop_callback():
+    return st.session_state.get("stop_pressed", False)
 
 # Processing Logic
 def run_processing(url_source, is_upload=False):
@@ -69,44 +71,94 @@ def run_processing(url_source, is_upload=False):
     st.session_state.df_results = None
     st.session_state.processed_sitemaps = []
     st.session_state.page_number = 0
+    st.session_state.stop_pressed = False
     
-    urls = []
+    urls_data = [] # List of dicts
     found_sitemaps = []
     errors = []
     
+    # Placeholder for Stop Button during processing
+    stop_placeholder = st.empty()
+    stop_btn = stop_placeholder.button("⏹ Stop Processing", key="stop_processing_btn")
+    if stop_btn:
+        st.session_state.stop_pressed = True
+    
     with st.spinner("Extracting URLs..."):
         if is_upload:
-            all_urls = set()
             for f in url_source:
+                if stop_callback(): break
                 f.seek(0)
-                file_urls = parse_uploaded_file(f.read())
-                all_urls.update(file_urls)
-            urls = list(all_urls)
+                # parse_uploaded_file now returns list of dicts
+                file_urls_data = parse_uploaded_file(f.read(), f.name)
+                urls_data.extend(file_urls_data)
+                
+            # Deduplicate logic for upload if needed, or trust parser
+            # Simple dedup by url
+            unique_urls = {}
+            for item in urls_data:
+                 unique_urls[item['sitemap_url']] = item
+            urls_data = list(unique_urls.values())
+            
             found_sitemaps = [f.name for f in url_source]
         else:
             # fetch content to validate
-            urls, found_sitemaps, errors = extract_urls_recursive(url_source, max_urls=limit_urls)
+            # extract_urls_recursive returns list of dicts now
+            urls_data, found_sitemaps, errors = extract_urls_recursive(
+                url_source, 
+                max_urls=limit_urls, 
+                should_stop=stop_callback
+            )
+            
+    # Check if stopped
+    if st.session_state.stop_pressed:
+        st.warning("Processing stopped by user. Showing partial results.")
     
-    urls = urls[:limit_urls]
+    stop_placeholder.empty() # Remove button
+
+    urls_data = urls_data[:limit_urls]
     
     if errors:
         with st.expander("⚠️ Extraction Warnings/Errors", expanded=True):
             for e in errors:
                 st.error(e)
 
-    if not urls:
+    if not urls_data:
         st.warning("No URLs found.")
         return
 
-    df = pd.DataFrame({'sitemap_url': urls})
+    # Create DF from list of dicts (automatically keys: sitemap_url, source_sitemap)
+    df = pd.DataFrame(urls_data)
     
-    if do_seo:
-        st.info(f"Starting SEO Analysis for {len(urls)} URLs...")
+    if do_seo and not st.session_state.stop_pressed:
+        st.info(f"Starting SEO Analysis for {len(df)} URLs...")
+        
+        # Show Stop Button again for Analysis phase
+        stop_placeholder_seo = st.empty()
+        if stop_placeholder_seo.button("⏹ Stop Analysis", key="stop_analysis_btn"):
+             st.session_state.stop_pressed = True
+             
         placeholder = st.empty()
+        
+        # Get just list of URLs for analyzer
+        target_urls = df['sitemap_url'].tolist()
+        
         try:
-            analyzed_data = asyncio.run(run_seo_analysis_async(urls, placeholder))
-            df = pd.DataFrame(analyzed_data)
-            placeholder.text("Analysis Complete!")
+            analyzed_data = asyncio.run(analyze_urls(target_urls, lambda p: placeholder.progress(p), stop_callback))
+            
+            if st.session_state.stop_pressed:
+                st.warning("Analysis stopped. Merging partial results.")
+            else:
+                 placeholder.text("Analysis Complete!")
+            
+            stop_placeholder_seo.empty()
+
+            # Merge analyzed data back to DF
+            # analyzed_data is list of dicts with 'sitemap_url' and results
+            if analyzed_data:
+                res_df = pd.DataFrame(analyzed_data)
+                # Merge on sitemap_url
+                df = pd.merge(df, res_df, on='sitemap_url', how='left')
+                
         except Exception as e:
             st.error(f"Error during analysis: {e}")
             
@@ -257,8 +309,10 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
         display_df['canonical_match'] = display_df['canonical_match'].fillna(False).astype(bool)
 
     # Column Configuration
+    # Column Configuration
     column_config = {
         "sitemap_url": st.column_config.LinkColumn("URL"),
+        "source_sitemap": st.column_config.TextColumn("Source Sitemap", width="medium"),
         "Status Icon": st.column_config.CheckboxColumn("Status OK", width="small"),
         "final_status": st.column_config.NumberColumn("Code", format="%d"),
         "canonical_match": st.column_config.CheckboxColumn("Canonical Match", width="small"),
