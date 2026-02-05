@@ -171,31 +171,59 @@ def run_processing(url_source, is_upload=False):
     st.rerun()
 
 # Helper for Late/Re-Analysis
+# Helper for Late/Re-Analysis
 def update_analysis(target_urls):
     if not target_urls:
          st.warning("No URLs selected to analyze.")
          return
          
     st.info(f"Analyzing {len(target_urls)} URLs...")
+    
+    # Enable stop button for this phase
+    st.session_state.stop_pressed = False
+    stop_placeholder_re = st.empty()
+    if stop_placeholder_re.button("⏹ Stop Analysis", key="stop_reanalysis_btn"):
+         st.session_state.stop_pressed = True
+    
     placeholder = st.empty()
     try:
         new_results = asyncio.run(analyze_urls(target_urls, lambda p: placeholder.progress(p), stop_callback))
         new_df = pd.DataFrame(new_results)
         
+        stop_placeholder_re.empty()
+        
+        if st.session_state.stop_pressed:
+            st.warning("Analysis stopped. Merging partial results.")
+            
         # Merge back into main DF
-        # We need to align by sitemap_url
-        current_df = st.session_state.df_results
+        current_df = st.session_state.df_results.copy()
         
-        # Set index to url for update
-        current_df.set_index('sitemap_url', inplace=True)
-        new_df.set_index('sitemap_url', inplace=True)
+        # We use merge to ensure new columns (seo fields) are added
+        # First, drop existing seo columns from current_df if they act as conflict, 
+        # OR we just merge on sitemap_url and resolve suffixes. 
+        # Better: remove potential SEO columns from current_df for the rows we analyzed? 
+        # Simplest robust way: 
+        # 1. Separate unchanged rows
+        # 2. Update changed rows
         
-        # Update columns
-        current_df.update(new_df)
-        
-        # Reset index
-        current_df.reset_index(inplace=True)
-        st.session_state.df_results = current_df
+        if not new_df.empty:
+             # Merge new_df into current_df
+             # current_df might already have 'final_status' etc if partially run before.
+             # We want new_results to OVERWRITE existing values for these URLs.
+             
+             # Set indices
+             current_df.set_index('sitemap_url', inplace=True)
+             new_df.set_index('sitemap_url', inplace=True)
+             
+             # Combine_first or update?
+             # update() DOES keep new columns if we handle it right, but standard update() is for existing cols.
+             # Let's use assignment which creates columns.
+             for col in new_df.columns:
+                 current_df[col] = new_df[col] # This updates matching index rows and adds col if missing
+                 
+             current_df.reset_index(inplace=True)
+             
+             st.session_state.df_results = current_df
         
         placeholder.success("Re-analysis Complete!")
         st.rerun()
