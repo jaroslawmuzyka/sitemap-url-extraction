@@ -179,7 +179,6 @@ def update_analysis(target_urls):
     st.info(f"Analyzing {len(target_urls)} URLs...")
     placeholder = st.empty()
     try:
-    try:
         new_results = asyncio.run(analyze_urls(target_urls, lambda p: placeholder.progress(p), stop_callback))
         new_df = pd.DataFrame(new_results)
         
