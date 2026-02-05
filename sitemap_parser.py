@@ -48,7 +48,7 @@ def parse_sitemap(content):
             
     return final_urls, sitemap_index_urls
 
-def extract_urls_recursive(url, max_urls=50000):
+def extract_urls_recursive(url, max_urls=1000000):
     """Recursively extract URLs from a sitemap or sitemap index."""
     all_urls = set()
     to_process = [url]

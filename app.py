@@ -47,7 +47,7 @@ st.title("🔗 Sitemap URL Extractor & SEO Analyzer")
 # Sidebar
 st.sidebar.header("Configuration")
 mode = st.sidebar.radio("Input Mode", ["Upload XML File", "Enter Sitemap URL"])
-limit_urls = st.sidebar.number_input("Limit URLs", value=50000, step=1000)
+limit_urls = st.sidebar.number_input("Limit URLs", value=1000000, step=10000)
 do_seo = st.sidebar.checkbox("Perform SEO Analysis", value=False, help="Check status codes, canonicals, noindex.")
 
 if st.sidebar.button("Clear Results"):
