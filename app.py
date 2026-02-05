@@ -179,7 +179,8 @@ def update_analysis(target_urls):
     st.info(f"Analyzing {len(target_urls)} URLs...")
     placeholder = st.empty()
     try:
-        new_results = asyncio.run(run_seo_analysis_async(target_urls, placeholder))
+    try:
+        new_results = asyncio.run(analyze_urls(target_urls, lambda p: placeholder.progress(p), stop_callback))
         new_df = pd.DataFrame(new_results)
         
         # Merge back into main DF
@@ -425,11 +426,15 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
     d1, d2, d_space = st.columns([1, 1, 6])
     
     with d1:
-        csv = df.to_csv(index=False).encode('utf-8')
+    # Use session state DF for exports to ensure full data and all columns
+    export_df = st.session_state.df_results.copy()
+    
+    with d1:
+        csv = export_df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, "sitemap_analysis.csv", "text/csv")
     with d2:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Sheet1')
+            export_df.to_excel(writer, index=False, sheet_name='Sheet1')
         st.download_button("Download Excel", buffer.getvalue(), "sitemap_analysis.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
