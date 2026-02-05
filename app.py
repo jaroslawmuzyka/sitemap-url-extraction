@@ -424,7 +424,6 @@ if st.session_state.processing_done and st.session_state.df_results is not None:
     # Use small columns for buttons, remainder spacer
     d1, d2, d_space = st.columns([1, 1, 6])
     
-    with d1:
     # Use session state DF for exports to ensure full data and all columns
     export_df = st.session_state.df_results.copy()
     
